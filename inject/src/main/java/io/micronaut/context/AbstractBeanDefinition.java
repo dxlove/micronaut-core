@@ -978,8 +978,12 @@ public class AbstractBeanDefinition<T> extends AbstractBeanContextConditional im
                 try {
                     Object bean;
                     Qualifier qualifier = resolveQualifier(resolutionContext, argument, isInnerConfiguration(argumentType));
-                    //noinspection unchecked
-                    bean = ((DefaultBeanContext) context).getBean(resolutionContext, argumentType, qualifier);
+                    if (Qualifier.class.isAssignableFrom(argumentType)) {
+                        bean = qualifier;
+                    } else {
+                        //noinspection unchecked
+                        bean = ((DefaultBeanContext) context).getBean(resolutionContext, argumentType, qualifier);
+                    }
                     path.pop();
                     return bean;
                 } catch (NoSuchBeanException e) {
@@ -1200,7 +1204,8 @@ public class AbstractBeanDefinition<T> extends AbstractBeanContextConditional im
     }
 
     /**
-     * Resolve a value for the given field of the given type and path.
+     * Resolve a value for the given field of the given type and path. Only
+     * used by applications compiled with versions of Micronaut prior to 1.2.0.
      *
      * @param resolutionContext The resolution context
      * @param context           The bean context
@@ -1222,6 +1227,34 @@ public class AbstractBeanDefinition<T> extends AbstractBeanContextConditional im
             Class<?> beanType = getBeanType();
             String pathString = propertyPath.length > 1 ? String.join(".", propertyPath) : propertyPath[0];
             String valString = resolvePropertyPath(resolutionContext, pathString);
+
+            return propertyResolver.getProperty(valString, ConversionContext.of(propertyType));
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Resolve a value for the given field of the given type and path.
+     *
+     * @param resolutionContext The resolution context
+     * @param context           The bean context
+     * @param propertyType      The required property type
+     * @param propertyPath      The property path
+     * @param <T1>              The generic type
+     * @return An optional value
+     */
+    @SuppressWarnings("unused")
+    @Internal
+    @UsedByGeneratedCode
+    protected final <T1> Optional<T1> getValueForPath(
+            BeanResolutionContext resolutionContext,
+            BeanContext context,
+            Argument<T1> propertyType,
+            String propertyPath) {
+        if (context instanceof PropertyResolver) {
+            PropertyResolver propertyResolver = (PropertyResolver) context;
+            Class<?> beanType = getBeanType();
+            String valString = substituteWildCards(resolutionContext, propertyPath);
 
             return propertyResolver.getProperty(valString, ConversionContext.of(propertyType));
         }
@@ -1753,7 +1786,7 @@ public class AbstractBeanDefinition<T> extends AbstractBeanContextConditional im
                         .map(map -> (Qualifier) map.get(argument));
                 qualifier = optional.orElse(null);
                 if (qualifier == null && isIterable()) {
-                    if (argument.isAnnotationPresent(Parameter.class) || innerConfiguration) {
+                    if (argument.isAnnotationPresent(Parameter.class) || innerConfiguration || Qualifier.class == argument.getType()) {
                         qualifier = optional.orElseGet(() -> {
                             final Optional<String> n = resolutionContext.get(Named.class.getName(), String.class);
                             return n.map(Qualifiers::byName).orElse(null);

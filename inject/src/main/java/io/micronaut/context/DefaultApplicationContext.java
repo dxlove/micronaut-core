@@ -237,8 +237,8 @@ public class DefaultApplicationContext extends DefaultBeanContext implements App
     }
 
     @Override
-    protected <T> Collection<BeanDefinition<T>> findBeanCandidates(Class<T> beanType, BeanDefinition<?> filter) {
-        Collection<BeanDefinition<T>> candidates = super.findBeanCandidates(beanType, filter);
+    protected <T> Collection<BeanDefinition<T>> findBeanCandidates(Class<T> beanType, BeanDefinition<?> filter, boolean filterProxied) {
+        Collection<BeanDefinition<T>> candidates = super.findBeanCandidates(beanType, filter, filterProxied);
         if (!candidates.isEmpty()) {
 
             List<BeanDefinition<T>> transformedCandidates = new ArrayList<>();
@@ -274,7 +274,7 @@ public class DefaultApplicationContext extends DefaultBeanContext implements App
                         continue;
                     }
 
-                    Collection<BeanDefinition> dependentCandidates = findBeanCandidates(dependentType, null);
+                    Collection<BeanDefinition> dependentCandidates = findBeanCandidates(dependentType, null, filterProxied);
                     if (!dependentCandidates.isEmpty()) {
                         for (BeanDefinition dependentCandidate : dependentCandidates) {
 
@@ -519,6 +519,20 @@ public class DefaultApplicationContext extends DefaultBeanContext implements App
         protected boolean shouldDeduceEnvironments() {
             return false;
         }
+
+        /**
+         * @return The refreshable property sources
+         */
+        public List<PropertySource> getRefreshablePropertySources() {
+            return refreshablePropertySources;
+        }
+
+        protected List<PropertySource> readPropertySourceList(String name) {
+            return super.readPropertySourceList(name)
+                    .stream()
+                    .map(BootstrapPropertySource::new)
+                    .collect(Collectors.toList());
+        }
     }
 
     /**
@@ -633,16 +647,20 @@ public class DefaultApplicationContext extends DefaultBeanContext implements App
                 if (this.bootstrapEnvironment == null) {
                     this.bootstrapEnvironment = createBootstrapEnvironment(environmentNamesArray);
                 }
+                refreshablePropertySources.addAll(bootstrapEnvironment.getRefreshablePropertySources());
+
                 BootstrapPropertySourceLocator bootstrapPropertySourceLocator = resolveBootstrapPropertySourceLocator(environmentNamesArray);
 
                 for (PropertySource propertySource : bootstrapPropertySourceLocator.findPropertySources(bootstrapEnvironment)) {
                     addPropertySource(propertySource);
+                    refreshablePropertySources.add(propertySource);
                 }
 
                 Collection<PropertySource> bootstrapPropertySources = bootstrapEnvironment.getPropertySources();
                 for (PropertySource bootstrapPropertySource : bootstrapPropertySources) {
-                    addPropertySource(new BootstrapPropertySource(bootstrapPropertySource));
+                    addPropertySource(bootstrapPropertySource);
                 }
+
                 return super.readPropertySourceList(name);
             } else {
                 return super.readPropertySourceList(name);

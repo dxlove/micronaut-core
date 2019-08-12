@@ -900,6 +900,14 @@ public class DefaultBeanContext implements BeanContext {
     }
 
     @Override
+    public <T, R> Optional<ExecutableMethod<T, R>> findProxyTargetMethod(Class<T> beanType, Qualifier<T> qualifier, String method, Class... arguments) {
+        ArgumentUtils.requireNonNull("beanType", beanType);
+        ArgumentUtils.requireNonNull("method", method);
+        BeanDefinition<T> definition = getProxyTargetBeanDefinition(beanType, qualifier);
+        return definition.findMethod(method, arguments);
+    }
+
+    @Override
     @SuppressWarnings("unchecked")
     public @Nonnull <T> Optional<BeanDefinition<T>> findProxyTargetBeanDefinition(@Nonnull Class<T> beanType, @Nullable Qualifier<T> qualifier) {
         ArgumentUtils.requireNonNull("beanType", beanType);
@@ -1295,13 +1303,26 @@ public class DefaultBeanContext implements BeanContext {
     /**
      * Find bean candidates for the given type.
      *
+     * @param <T>      The bean generic type
      * @param beanType The bean type
      * @param filter   A bean definition to filter out
+     * @return The candidates
+     */
+    protected @Nonnull <T> Collection<BeanDefinition<T>>  findBeanCandidates(@Nonnull Class<T> beanType, @Nullable BeanDefinition<?> filter) {
+        return findBeanCandidates(beanType, filter, true);
+    }
+
+    /**
+     * Find bean candidates for the given type.
+     *
      * @param <T>      The bean generic type
+     * @param beanType The bean type
+     * @param filter   A bean definition to filter out
+     * @param filterProxied Whether to filter out bean proxy targets
      * @return The candidates
      */
     @SuppressWarnings("unchecked")
-    protected @Nonnull <T> Collection<BeanDefinition<T>>  findBeanCandidates(@Nonnull Class<T> beanType, @Nullable BeanDefinition<?> filter) {
+    protected @Nonnull <T> Collection<BeanDefinition<T>>  findBeanCandidates(@Nonnull Class<T> beanType, @Nullable BeanDefinition<?> filter, boolean filterProxied) {
         ArgumentUtils.requireNonNull("beanType", beanType);
 
         if (LOG.isDebugEnabled()) {
@@ -1350,6 +1371,9 @@ public class DefaultBeanContext implements BeanContext {
                     .collect(Collectors.toSet());
 
             if (!candidates.isEmpty()) {
+                if (filterProxied) {
+                    filterProxiedTypes(candidates, true, false);
+                }
                 filterReplacedBeans(candidates);
             }
 
@@ -1706,9 +1730,7 @@ public class DefaultBeanContext implements BeanContext {
                             if (type != null) {
                                 final Optional qualified = Qualifiers.<T>byName(qualifier)
                                         .qualify(type, Stream.of(definition));
-                                if (qualified.isPresent()) {
-                                    return true;
-                                }
+                                return qualified.isPresent();
                             }
                         }
                     }
@@ -1764,10 +1786,12 @@ public class DefaultBeanContext implements BeanContext {
             }
             if (defaultImpl.filter(impl -> impl == bt).isPresent()) {
                 return (clazz) -> clazz.isAssignableFrom(bt);
+            } else {
+                return (clazz) -> clazz == bt;
             }
         }
 
-        return (clazz) -> clazz == bt;
+        return (clazz) -> clazz != Object.class && clazz.isAssignableFrom(bt);
     }
 
     private <T> void doInject(BeanResolutionContext resolutionContext, T instance, BeanDefinition definition) {
@@ -1788,7 +1812,7 @@ public class DefaultBeanContext implements BeanContext {
 
     private void loadContextScopeBean(BeanDefinition beanDefinition) {
         if (beanDefinition.isIterable()) {
-            Collection<BeanDefinition> beanCandidates = findBeanCandidates(beanDefinition.getBeanType(), null);
+            Collection<BeanDefinition> beanCandidates = findBeanCandidates(beanDefinition.getBeanType(), null, true);
             for (BeanDefinition beanCandidate : beanCandidates) {
                 DefaultBeanResolutionContext resolutionContext = new DefaultBeanResolutionContext(this, beanDefinition);
 
@@ -2079,7 +2103,7 @@ public class DefaultBeanContext implements BeanContext {
             boolean throwNonUnique,
             boolean includeProvided,
             boolean filterProxied) {
-        Collection<BeanDefinition<T>> candidates = new ArrayList<>(findBeanCandidates(beanType, null));
+        Collection<BeanDefinition<T>> candidates = new ArrayList<>(findBeanCandidates(beanType, null, filterProxied));
         if (candidates.isEmpty()) {
             return Optional.empty();
         }
@@ -2097,7 +2121,16 @@ public class DefaultBeanContext implements BeanContext {
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("Qualifying bean [{}] for qualifier: {} ", beanType.getName(), qualifier);
                 }
-                Stream<BeanDefinition<T>> candidateStream = candidates.stream().filter(c -> !c.isAbstract());
+                Stream<BeanDefinition<T>> candidateStream = candidates.stream().filter(c -> {
+                    if (!c.isAbstract()) {
+                        if (c instanceof NoInjectionBeanDefinition) {
+                            NoInjectionBeanDefinition noInjectionBeanDefinition = (NoInjectionBeanDefinition) c;
+                            return qualifier.contains(noInjectionBeanDefinition.qualifier);
+                        }
+                        return true;
+                    }
+                    return false;
+                });
                 Stream<BeanDefinition<T>> qualified = qualifier.reduce(beanType, candidateStream);
                 List<BeanDefinition<T>> beanDefinitionList = qualified.collect(Collectors.toList());
                 if (beanDefinitionList.isEmpty()) {
@@ -2205,12 +2238,12 @@ public class DefaultBeanContext implements BeanContext {
         synchronized (singletonObjects) {
             if (definition instanceof NoInjectionBeanDefinition) {
                 NoInjectionBeanDefinition<T> manuallyRegistered = (NoInjectionBeanDefinition) definition;
-                T bean = (T) singletonObjects.get(new BeanKey(beanType, manuallyRegistered.getQualifier()));
-                if (bean == null) {
+                BeanRegistration<T> reg = (BeanRegistration<T>) singletonObjects.get(new BeanKey(beanType, manuallyRegistered.getQualifier()));
+                if (reg == null) {
                     throw new IllegalStateException("Manually registered singleton no longer present in bean context");
                 }
-                registerSingletonBean(definition, beanType, bean, qualifier, true);
-                return bean;
+                registerSingletonBean(definition, beanType, reg.bean, qualifier, true);
+                return reg.bean;
             } else {
                 T createdBean = doCreateBean(resolutionContext, definition, qualifier, true, null);
                 registerSingletonBean(definition, beanType, createdBean, qualifier, true);
@@ -2390,7 +2423,7 @@ public class DefaultBeanContext implements BeanContext {
 
     @SuppressWarnings("unchecked")
     private <T> Collection<BeanDefinition<T>> findBeanCandidatesInternal(Class<T> beanType) {
-        return (Collection) beanCandidateCache.computeIfAbsent(beanType, aClass -> (Collection) findBeanCandidates(beanType, null));
+        return (Collection) beanCandidateCache.computeIfAbsent(beanType, aClass -> (Collection) findBeanCandidates(beanType, null, true));
     }
 
     @SuppressWarnings("unchecked")
@@ -2558,7 +2591,7 @@ public class DefaultBeanContext implements BeanContext {
     }
 
     private <T> boolean isCandidatePresent(Class<T> beanType, Qualifier<T> qualifier) {
-        final Collection<BeanDefinition<T>> candidates = findBeanCandidates(beanType, null);
+        final Collection<BeanDefinition<T>> candidates = findBeanCandidates(beanType, null, true);
         if (!candidates.isEmpty()) {
             filterReplacedBeans(candidates);
             Stream<BeanDefinition<T>> stream = candidates.stream();

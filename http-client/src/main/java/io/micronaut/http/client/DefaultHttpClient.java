@@ -63,6 +63,7 @@ import io.micronaut.http.netty.stream.HttpStreamsClientHandler;
 import io.micronaut.http.netty.stream.StreamedHttpResponse;
 import io.micronaut.http.sse.Event;
 import io.micronaut.http.ssl.ClientSslConfiguration;
+import io.micronaut.http.uri.UriBuilder;
 import io.micronaut.http.uri.UriTemplate;
 import io.micronaut.jackson.ObjectMapperFactory;
 import io.micronaut.jackson.codec.JsonMediaTypeCodec;
@@ -833,7 +834,7 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
                         .map((Function<HttpContent, io.micronaut.http.HttpResponse<ByteBuffer<?>>>) message -> {
                     ByteBuf byteBuf = message.content();
                     if (log.isTraceEnabled()) {
-                        log.trace("HTTP Client Streaming Response Received Chunk (length: {})", byteBuf.readableBytes());
+                        log.trace("HTTP Client Streaming Response Received Chunk (length: {}) for Request: {} {}", byteBuf.readableBytes(), request.getMethod(), request.getUri());
                         traceBody("Response", byteBuf);
                     }
                     ByteBuffer<?> byteBuffer = byteBufferFactory.wrap(byteBuf);
@@ -870,7 +871,7 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
                 NettyStreamedHttpResponse<?> nettyStreamedHttpResponse = (NettyStreamedHttpResponse) response;
                 Flowable<HttpContent> httpContentFlowable = Flowable.fromPublisher(nettyStreamedHttpResponse.getNettyResponse());
 
-                boolean isJsonStream = request.getContentType().map(mediaType -> mediaType.equals(MediaType.APPLICATION_JSON_STREAM_TYPE)).orElse(false);
+                boolean isJsonStream = response.getContentType().map(mediaType -> mediaType.equals(MediaType.APPLICATION_JSON_STREAM_TYPE)).orElse(false);
                 boolean streamArray = !Iterable.class.isAssignableFrom(type.getType()) && !isJsonStream;
                 JacksonProcessor jacksonProcessor = new JacksonProcessor(mediaTypeCodec.getObjectMapper().getFactory(), streamArray) {
                     @Override
@@ -878,7 +879,7 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
                         httpContentFlowable.map(content -> {
                             ByteBuf chunk = content.content();
                             if (log.isTraceEnabled()) {
-                                log.trace("HTTP Client Streaming Response Received Chunk (length: {})", chunk.readableBytes());
+                                log.trace("HTTP Client Streaming Response Received Chunk (length: {}) for Request: {} {}", chunk.readableBytes(), request.getMethod(), request.getUri());
                                 traceBody("Chunk", chunk);
                             }
                             try {
@@ -1103,7 +1104,16 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
      * @return A {@link Publisher} with the resolved URI
      */
     protected <I> Publisher<URI> resolveRequestURI(io.micronaut.http.HttpRequest<I> request) {
-        URI requestURI = request.getUri();
+        URI requestURI;
+        if (!request.getParameters().isEmpty()) {
+            UriBuilder newUri = UriBuilder.of(request.getUri());
+            request.getParameters().forEach((key, value) -> {
+                newUri.queryParam(key, value.toArray());
+            });
+            requestURI = newUri.build();
+        } else {
+            requestURI = request.getUri();
+        }
         if (requestURI.getScheme() != null) {
             // if the request URI includes a scheme then it is fully qualified so use the direct server
             return Publishers.just(requestURI);
@@ -1598,7 +1608,7 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
                     NettyStreamedHttpResponse response = new NettyStreamedHttpResponse(msg);
                     HttpHeaders headers = msg.headers();
                     if (log.isTraceEnabled()) {
-                        log.trace("HTTP Client Streaming Response Received: {}", msg.status());
+                        log.trace("HTTP Client Streaming Response Received ({}) for Request: {} {}", msg.status(), nettyRequest.method().name(), nettyRequest.uri());
                         traceHeaders(headers);
                     }
 
@@ -2273,7 +2283,7 @@ public class DefaultHttpClient implements RxWebSocketClient, RxHttpClient, RxStr
         public RequestKey(URI requestURI) {
             this.secure = "https".equalsIgnoreCase(requestURI.getScheme());
             this.host = requestURI.getHost();
-            this.port = requestURI.getPort() > -1 ? requestURI.getPort() : sslContext != null ? DEFAULT_HTTPS_PORT : DEFAULT_HTTP_PORT;
+            this.port = requestURI.getPort() > -1 ? requestURI.getPort() : this.secure ? DEFAULT_HTTPS_PORT : DEFAULT_HTTP_PORT;
 
         }
 

@@ -21,13 +21,7 @@ import io.micronaut.core.util.StringUtils;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.StringJoiner;
+import java.util.*;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -173,10 +167,10 @@ public class UriTemplate implements Comparable<UriTemplate> {
      */
     public String expand(Map<String, Object> parameters) {
         StringBuilder builder = new StringBuilder();
-        boolean previousHasContent = false;
+        boolean anyPreviousHasContent = false;
         boolean anyPreviousHasOperator = false;
         for (PathSegment segment : segments) {
-            String result = segment.expand(parameters, previousHasContent, anyPreviousHasOperator);
+            String result = segment.expand(parameters, anyPreviousHasContent, anyPreviousHasOperator);
             if (result == null) {
                 break;
             }
@@ -184,8 +178,8 @@ public class UriTemplate implements Comparable<UriTemplate> {
                 if (result.contains(String.valueOf(((UriTemplateParser.VariablePathSegment) segment).getOperator()))) {
                     anyPreviousHasOperator = true;
                 }
+                anyPreviousHasContent = anyPreviousHasContent || result.length() > 0;
             }
-            previousHasContent = result.length() > 0;
             builder.append(result);
         }
 
@@ -988,9 +982,12 @@ public class UriTemplate implements Comparable<UriTemplate> {
 
                         map.forEach((key, some) -> {
                             String ks = key.toString();
-                            Iterable<?> values = (some instanceof Iterable) ? (Iterable) some : Arrays.asList(some);
-                            values.forEach(value -> {
-                                String vs = value == null ? "" : value.toString();
+                            Iterable<?> values = (some instanceof Iterable) ? (Iterable) some : Collections.singletonList(some);
+                            for (Object value: values) {
+                                if (value == null) {
+                                    continue;
+                                }
+                                String vs = value.toString();
                                 String ek = encode ? encode(ks, isQuery) : escape(ks);
                                 String ev = encode ? encode(vs, isQuery) : escape(vs);
                                 if (modifierChar == EXPAND_MODIFIER) {
@@ -1000,7 +997,7 @@ public class UriTemplate implements Comparable<UriTemplate> {
                                     joiner.add(ek);
                                     joiner.add(ev);
                                 }
-                            });
+                            }
                         });
                         result = joiner.toString();
                     } else {

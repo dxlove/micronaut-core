@@ -136,6 +136,11 @@ ext {
                     group:'io.micronaut.configuration',
                     name:'micronaut-hibernate-validator'
             ],
+            'micronaut.jmx': [
+                    version:micronautJmxVersion,
+                    group:'io.micronaut.configuration',
+                    name:'micronaut-jmx'
+            ],
             'micronaut.picocli': [
                     version:micronautPicocliVersion,
                     group:'io.micronaut.configuration',
@@ -148,8 +153,13 @@ ext {
             ],
             'micronaut.graphql': [
                     version:micronautGraphQLVersion,
-                    group:'io.micronaut.configuration',
+                    group:'io.micronaut.graphql',
                     name:'micronaut-graphql'
+            ],
+            'micronaut.graphql.gorm': [
+                    version:micronautGraphQLGormVersion,
+                    group:'io.micronaut.graphql',
+                    name:'micronaut-graphql-gorm'
             ],
             'micronaut.groovy': [
                     version:micronautGroovyVersion,
@@ -465,6 +475,11 @@ ext {
                     modules : ['micronaut-rss', 'micronaut-itunespodcast']
 
             ],
+            'micronaut.kubernetes': [
+                    version:micronautKubernetesVersion,
+                    group:'io.micronaut.kubernetes',
+                    name:'micronaut-kubernetes-discovery-client'
+            ]
     ]
 
     dependencyVersion = { String name ->

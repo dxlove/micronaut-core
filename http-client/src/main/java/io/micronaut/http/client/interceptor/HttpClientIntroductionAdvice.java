@@ -184,7 +184,7 @@ public class HttpClientIntroductionAdvice implements MethodInterceptor<Object, O
             ReturnType returnType = context.getReturnType();
             Class<?> javaReturnType = returnType.getType();
 
-            UriMatchTemplate uriTemplate = UriMatchTemplate.of("");
+            UriMatchTemplate uriTemplate = UriMatchTemplate.of("/");
             if (!(uri.length() == 1 && uri.charAt(0) == '/')) {
                 uriTemplate = uriTemplate.nest(uri);
             }
@@ -193,7 +193,6 @@ public class HttpClientIntroductionAdvice implements MethodInterceptor<Object, O
             Map<String, String> queryParams = new LinkedHashMap<>();
             List<String> uriVariables = uriTemplate.getVariableNames();
 
-            boolean variableSatisfied = uriVariables.isEmpty() || uriVariables.containsAll(paramMap.keySet());
             MutableHttpRequest<Object> request;
             Object body = null;
             Map<String, MutableArgumentValue<?>> parameters = context.getParameters();
@@ -327,17 +326,23 @@ public class HttpClientIntroductionAdvice implements MethodInterceptor<Object, O
                 }
 
                 if (body != null) {
+                    boolean variableSatisfied = uriVariables.isEmpty() || uriVariables.containsAll(paramMap.keySet());
                     if (!variableSatisfied) {
-
                         if (body instanceof Map) {
-                            paramMap.putAll((Map) body);
+                            for (Map.Entry<Object, Object> entry : ((Map<Object, Object>) body).entrySet()) {
+                                String k = entry.getKey().toString();
+                                Object v = entry.getValue();
+                                if (v != null) {
+                                    paramMap.putIfAbsent(k, v);
+                                }
+                            }
                         } else {
                             BeanMap<Object> beanMap = BeanMap.of(body);
                             for (Map.Entry<String, Object> entry : beanMap.entrySet()) {
                                 String k = entry.getKey();
                                 Object v = entry.getValue();
                                 if (v != null) {
-                                    paramMap.put(k, v);
+                                    paramMap.putIfAbsent(k, v);
                                 }
                             }
                         }

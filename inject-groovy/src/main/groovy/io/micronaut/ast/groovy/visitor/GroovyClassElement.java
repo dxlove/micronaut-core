@@ -114,29 +114,27 @@ public class GroovyClassElement extends AbstractGroovyElement implements ClassEl
     @Nonnull
     @Override
     public Map<String, ClassElement> getTypeArguments(@Nonnull String type) {
-        if (type != null) {
-            Map<String, Map<String, ClassNode>> allData = getGenericTypeInfo();
+        Map<String, Map<String, ClassNode>> allData = getGenericTypeInfo();
 
-            Map<String, ClassNode> thisSpec = allData.get(getName());
-            Map<String, ClassNode> forType = allData.get(type);
-            if (forType != null) {
-                Map<String, ClassElement> typeArgs = new LinkedHashMap<>(forType.size());
-                for (Map.Entry<String, ClassNode> entry : forType.entrySet()) {
-                    ClassNode classNode = entry.getValue();
+        Map<String, ClassNode> thisSpec = allData.get(getName());
+        Map<String, ClassNode> forType = allData.get(type);
+        if (forType != null) {
+            Map<String, ClassElement> typeArgs = new LinkedHashMap<>(forType.size());
+            for (Map.Entry<String, ClassNode> entry : forType.entrySet()) {
+                ClassNode classNode = entry.getValue();
 
-                    ClassElement rawElement = new GroovyClassElement(sourceUnit, classNode, AstAnnotationUtils.getAnnotationMetadata(
-                            sourceUnit,
-                            classNode
-                    ));
-                    if (thisSpec != null) {
-                        rawElement = getGenericElement(sourceUnit, classNode, rawElement, thisSpec);
-                    }
-                    typeArgs.put(entry.getKey(), rawElement);
+                ClassElement rawElement = new GroovyClassElement(sourceUnit, classNode, AstAnnotationUtils.getAnnotationMetadata(
+                        sourceUnit,
+                        classNode
+                ));
+                if (thisSpec != null) {
+                    rawElement = getGenericElement(sourceUnit, classNode, rawElement, thisSpec);
                 }
-                return Collections.unmodifiableMap(typeArgs);
+                typeArgs.put(entry.getKey(), rawElement);
             }
-
+            return Collections.unmodifiableMap(typeArgs);
         }
+
         return Collections.emptyMap();
     }
 
@@ -196,17 +194,24 @@ public class GroovyClassElement extends AbstractGroovyElement implements ClassEl
         for (PropertyNode propertyNode : propertyNodes) {
             if (propertyNode.isPublic() && !propertyNode.isStatic()) {
                 groovyProps.add(propertyNode.getName());
+                boolean readOnly = propertyNode.getField().isFinal();
                 GroovyPropertyElement groovyPropertyElement = new GroovyPropertyElement(
                         sourceUnit,
                         this,
                         propertyNode.getField(),
                         AstAnnotationUtils.getAnnotationMetadata(sourceUnit, propertyNode.getField()),
-                        new GroovyClassElement(sourceUnit, propertyNode.getType(),
-                                AnnotationMetadata.EMPTY_METADATA),
                         propertyNode.getName(),
-                        false,
+                        readOnly,
                         propertyNode
-                );
+                ) {
+                    @Nonnull
+                    @Override
+                    public ClassElement getType() {
+                        ClassNode type = propertyNode.getType();
+                        return new GroovyClassElement(sourceUnit, type,
+                                AstAnnotationUtils.getAnnotationMetadata(sourceUnit, type));
+                    }
+                };
                 propertyElements.add(groovyPropertyElement);
             }
         }
@@ -322,7 +327,6 @@ public class GroovyClassElement extends AbstractGroovyElement implements ClassEl
                             value.declaringType == null ? this : value.declaringType,
                             value.getter,
                             annotationMetadata,
-                            value.type,
                             propertyName,
                             value.setter == null,
                             value.getter) {
@@ -337,6 +341,12 @@ public class GroovyClassElement extends AbstractGroovyElement implements ClassEl
                                 ));
                             }
                             return Optional.empty();
+                        }
+
+                        @Nonnull
+                        @Override
+                        public ClassElement getType() {
+                            return value.type;
                         }
 
                         @Override
